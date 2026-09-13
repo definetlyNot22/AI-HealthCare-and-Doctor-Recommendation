@@ -1,18 +1,26 @@
-import sqlite3
+import os
 import random
 import string
 import datetime
-from typing import List, Dict, Any, Optional
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from typing import List, Optional
 from models import AppointmentCreate, Appointment
 
-DB_PATH = "trihealth_appointments.db"
+# Fetch the cloud database URL from Vercel environment variables
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    # Connects to PostgreSQL instead of a local SQLite file
+    if not DATABASE_URL:
+        raise Exception("DATABASE_URL environment variable is not set.")
+    return psycopg2.connect(DATABASE_URL)
 
 def init_db():
+    if not DATABASE_URL:
+        print("Warning: DATABASE_URL not set. Skipping DB initialization.")
+        return
+        
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -40,6 +48,7 @@ def init_db():
     )
     """)
     conn.commit()
+    cursor.close()
     conn.close()
 
 def generate_booking_ref() -> str:
@@ -57,13 +66,14 @@ def create_appointment(data: AppointmentCreate) -> Appointment:
     
     qr_payload = f"TRIHEALTH|{booking_ref}|{data.doctor_name}|{data.appointment_date}|{data.appointment_time}|{data.patient_name}"
     
+    # Note: PostgreSQL uses %s instead of ? for parameter binding
     cursor.execute("""
     INSERT INTO appointments (
         id, booking_ref, doctor_id, doctor_name, doctor_system, doctor_specialty,
         clinic_name, clinic_address, patient_name, patient_phone, patient_email,
         patient_age, appointment_date, appointment_time, consultation_mode,
         symptoms, consultation_fee, status, created_at, qr_code_data
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """, (
         app_id, booking_ref, data.doctor_id, data.doctor_name, data.doctor_system,
         data.doctor_specialty, data.clinic_name, data.clinic_address, data.patient_name,
@@ -72,83 +82,50 @@ def create_appointment(data: AppointmentCreate) -> Appointment:
         data.consultation_fee, "Confirmed", created_at, qr_payload
     ))
     conn.commit()
+    cursor.close()
     conn.close()
     
     return Appointment(
-        id=app_id,
-        booking_ref=booking_ref,
-        doctor_id=data.doctor_id,
-        doctor_name=data.doctor_name,
-        doctor_system=data.doctor_system,
-        doctor_specialty=data.doctor_specialty,
-        clinic_name=data.clinic_name,
-        clinic_address=data.clinic_address,
-        patient_name=data.patient_name,
-        patient_phone=data.patient_phone,
-        patient_email=data.patient_email,
-        patient_age=data.patient_age,
-        appointment_date=data.appointment_date,
-        appointment_time=data.appointment_time,
-        consultation_mode=data.consultation_mode,
-        symptoms=data.symptoms,
-        consultation_fee=data.consultation_fee,
-        status="Confirmed",
-        created_at=created_at,
-        qr_code_data=qr_payload
+        id=app_id, booking_ref=booking_ref, doctor_id=data.doctor_id, doctor_name=data.doctor_name,
+        doctor_system=data.doctor_system, doctor_specialty=data.doctor_specialty, clinic_name=data.clinic_name,
+        clinic_address=data.clinic_address, patient_name=data.patient_name, patient_phone=data.patient_phone,
+        patient_email=data.patient_email, patient_age=data.patient_age, appointment_date=data.appointment_date,
+        appointment_time=data.appointment_time, consultation_mode=data.consultation_mode, symptoms=data.symptoms,
+        consultation_fee=data.consultation_fee, status="Confirmed", created_at=created_at, qr_code_data=qr_payload
     )
 
 def get_all_appointments(patient_phone: Optional[str] = None) -> List[Appointment]:
     conn = get_db_connection()
-    cursor = conn.cursor()
+    # RealDictCursor allows row["column_name"] syntax just like sqlite3.Row
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
     if patient_phone:
-        cursor.execute("SELECT * FROM appointments WHERE patient_phone = ? ORDER BY created_at DESC", (patient_phone,))
+        cursor.execute("SELECT * FROM appointments WHERE patient_phone = %s ORDER BY created_at DESC", (patient_phone,))
     else:
         cursor.execute("SELECT * FROM appointments ORDER BY created_at DESC")
     rows = cursor.fetchall()
+    cursor.close()
     conn.close()
     
-    results = []
-    for row in rows:
-        results.append(Appointment(
-            id=row["id"],
-            booking_ref=row["booking_ref"],
-            doctor_id=row["doctor_id"],
-            doctor_name=row["doctor_name"],
-            doctor_system=row["doctor_system"],
-            doctor_specialty=row["doctor_specialty"],
-            clinic_name=row["clinic_name"],
-            clinic_address=row["clinic_address"],
-            patient_name=row["patient_name"],
-            patient_phone=row["patient_phone"],
-            patient_email=row["patient_email"],
-            patient_age=row["patient_age"],
-            appointment_date=row["appointment_date"],
-            appointment_time=row["appointment_time"],
-            consultation_mode=row["consultation_mode"],
-            symptoms=row["symptoms"],
-            consultation_fee=row["consultation_fee"],
-            status=row["status"],
-            created_at=row["created_at"],
-            qr_code_data=row["qr_code_data"]
-        ))
-    return results
+    return [Appointment(**row) for row in rows]
 
 def cancel_appointment(appointment_id: str) -> bool:
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE appointments SET status = 'Cancelled' WHERE id = ? OR booking_ref = ?", (appointment_id, appointment_id))
+    cursor.execute("UPDATE appointments SET status = 'Cancelled' WHERE id = %s OR booking_ref = %s", (appointment_id, appointment_id))
     rows_affected = cursor.rowcount
     conn.commit()
+    cursor.close()
     conn.close()
     return rows_affected > 0
 
 def get_booked_slots(doctor_id: str, date: str) -> List[str]:
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
     cursor.execute(
-        "SELECT appointment_time FROM appointments WHERE doctor_id = ? AND appointment_date = ? AND status != 'Cancelled'",
+        "SELECT appointment_time FROM appointments WHERE doctor_id = %s AND appointment_date = %s AND status != 'Cancelled'",
         (doctor_id, date)
     )
     rows = cursor.fetchall()
+    cursor.close()
     conn.close()
     return [row["appointment_time"] for row in rows]
