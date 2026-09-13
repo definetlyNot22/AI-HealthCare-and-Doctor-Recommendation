@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+##<<<<<<< HEAD
 # TriHealth AI - Integrative Healthcare & Doctor Recommendation Platform
 
 > **Tri-Paradigm Clinical Intelligence**: Patients share their health problem, receive instant comparative medical perspectives across **Ayurveda**, **Homeopathy**, and **Allopathy**, select their preferred healing path, get matched with the top-rated doctors in their city, and book appointment slots with confirmed digital passes.
