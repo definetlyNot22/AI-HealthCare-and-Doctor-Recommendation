@@ -167,7 +167,9 @@ def cancel_existing_appointment(appointment_id: str):
         raise HTTPException(status_code=404, detail="Appointment not found or already cancelled")
     return {"message": "Appointment cancelled successfully", "id": appointment_id}
     
-
+@app.get("/")
+def read_root():
+    return {"status": "success", "message": "TriHealth AI Backend is live!"}
     
 if __name__ == "__main__":
     import uvicorn
