@@ -134,26 +134,12 @@ def create_appointment(data: AppointmentCreate) -> Appointment:
     conn.close()
     
     return Appointment(
-        id=app_id,
-        booking_ref=booking_ref,
-        doctor_id=data.doctor_id,
-        doctor_name=data.doctor_name,
-        doctor_system=data.doctor_system,
-        doctor_specialty=data.doctor_specialty,
-        clinic_name=data.clinic_name,
-        clinic_address=data.clinic_address,
-        patient_name=data.patient_name,
-        patient_phone=data.patient_phone,
-        patient_email=data.patient_email,
-        patient_age=data.patient_age,
-        appointment_date=data.appointment_date,
-        appointment_time=data.appointment_time,
-        consultation_mode=data.consultation_mode,
-        symptoms=data.symptoms,
-        consultation_fee=data.consultation_fee,
-        status="Confirmed",
-        created_at=created_at,
-        qr_code_data=qr_payload
+        id=app_id, booking_ref=booking_ref, doctor_id=data.doctor_id, doctor_name=data.doctor_name,
+        doctor_system=data.doctor_system, doctor_specialty=data.doctor_specialty, clinic_name=data.clinic_name,
+        clinic_address=data.clinic_address, patient_name=data.patient_name, patient_phone=data.patient_phone,
+        patient_email=data.patient_email, patient_age=data.patient_age, appointment_date=data.appointment_date,
+        appointment_time=data.appointment_time, consultation_mode=data.consultation_mode, symptoms=data.symptoms,
+        consultation_fee=data.consultation_fee, status="Confirmed", created_at=created_at, qr_code_data=qr_payload
     )
 
 def get_all_appointments(patient_phone: Optional[str] = None) -> List[Appointment]:
@@ -176,31 +162,7 @@ def get_all_appointments(patient_phone: Optional[str] = None) -> List[Appointmen
     cursor.close()
     conn.close()
     
-    results = []
-    for row in rows:
-        results.append(Appointment(
-            id=row["id"],
-            booking_ref=row["booking_ref"],
-            doctor_id=row["doctor_id"],
-            doctor_name=row["doctor_name"],
-            doctor_system=row["doctor_system"],
-            doctor_specialty=row["doctor_specialty"],
-            clinic_name=row["clinic_name"],
-            clinic_address=row["clinic_address"],
-            patient_name=row["patient_name"],
-            patient_phone=row["patient_phone"],
-            patient_email=row["patient_email"],
-            patient_age=row["patient_age"],
-            appointment_date=row["appointment_date"],
-            appointment_time=row["appointment_time"],
-            consultation_mode=row["consultation_mode"],
-            symptoms=row["symptoms"],
-            consultation_fee=row["consultation_fee"],
-            status=row["status"],
-            created_at=row["created_at"],
-            qr_code_data=row["qr_code_data"]
-        ))
-    return results
+    return [Appointment(**row) for row in rows]
 
 def cancel_appointment(appointment_id: str) -> bool:
     db_type, conn = get_connection()
