@@ -1,19 +1,32 @@
 import os
-import sqlite3
 import random
 import string
 import datetime
+import sqlite3
 from typing import List, Dict, Any, Optional
 from models import AppointmentCreate, Appointment
 
-if os.environ.get("VERCEL"):
-    DB_PATH = "/tmp/trihealth_appointments.db"
-else:
-    DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trihealth_appointments.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-def get_db_connection():
-    first_time = not os.path.exists(DB_PATH)
-    conn = sqlite3.connect(DB_PATH)
+# SQLite fallback path
+if os.environ.get("VERCEL"):
+    SQLITE_PATH = "/tmp/trihealth_appointments.db"
+else:
+    SQLITE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trihealth_appointments.db")
+
+def get_connection():
+    """Returns a tuple of (backend_type, connection)"""
+    if DATABASE_URL:
+        try:
+            import psycopg2
+            from psycopg2.extras import RealDictCursor
+            conn = psycopg2.connect(DATABASE_URL)
+            return "postgres", conn
+        except Exception as e:
+            print(f"PostgreSQL connection warning: {e}. Falling back to SQLite.")
+    
+    first_time = not os.path.exists(SQLITE_PATH)
+    conn = sqlite3.connect(SQLITE_PATH)
     conn.row_factory = sqlite3.Row
     if first_time:
         cursor = conn.cursor()
@@ -42,10 +55,10 @@ def get_db_connection():
         )
         """)
         conn.commit()
-    return conn
+    return "sqlite", conn
 
 def init_db():
-    conn = get_db_connection()
+    db_type, conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS appointments (
@@ -72,6 +85,7 @@ def init_db():
     )
     """)
     conn.commit()
+    cursor.close()
     conn.close()
 
 def generate_booking_ref() -> str:
@@ -80,30 +94,43 @@ def generate_booking_ref() -> str:
     return f"APT-{year}-{chars}"
 
 def create_appointment(data: AppointmentCreate) -> Appointment:
-    conn = get_db_connection()
+    db_type, conn = get_connection()
     cursor = conn.cursor()
     
     app_id = f"apt-{random.randint(100000, 999999)}"
     booking_ref = generate_booking_ref()
     created_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
     qr_payload = f"TRIHEALTH|{booking_ref}|{data.doctor_name}|{data.appointment_date}|{data.appointment_time}|{data.patient_name}"
     
-    cursor.execute("""
-    INSERT INTO appointments (
-        id, booking_ref, doctor_id, doctor_name, doctor_system, doctor_specialty,
-        clinic_name, clinic_address, patient_name, patient_phone, patient_email,
-        patient_age, appointment_date, appointment_time, consultation_mode,
-        symptoms, consultation_fee, status, created_at, qr_code_data
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
+    params = (
         app_id, booking_ref, data.doctor_id, data.doctor_name, data.doctor_system,
         data.doctor_specialty, data.clinic_name, data.clinic_address, data.patient_name,
         data.patient_phone, data.patient_email, data.patient_age, data.appointment_date,
         data.appointment_time, data.consultation_mode, data.symptoms or "",
         data.consultation_fee, "Confirmed", created_at, qr_payload
-    ))
+    )
+    
+    if db_type == "postgres":
+        cursor.execute("""
+        INSERT INTO appointments (
+            id, booking_ref, doctor_id, doctor_name, doctor_system, doctor_specialty,
+            clinic_name, clinic_address, patient_name, patient_phone, patient_email,
+            patient_age, appointment_date, appointment_time, consultation_mode,
+            symptoms, consultation_fee, status, created_at, qr_code_data
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, params)
+    else:
+        cursor.execute("""
+        INSERT INTO appointments (
+            id, booking_ref, doctor_id, doctor_name, doctor_system, doctor_specialty,
+            clinic_name, clinic_address, patient_name, patient_phone, patient_email,
+            patient_age, appointment_date, appointment_time, consultation_mode,
+            symptoms, consultation_fee, status, created_at, qr_code_data
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, params)
+        
     conn.commit()
+    cursor.close()
     conn.close()
     
     return Appointment(
@@ -130,13 +157,23 @@ def create_appointment(data: AppointmentCreate) -> Appointment:
     )
 
 def get_all_appointments(patient_phone: Optional[str] = None) -> List[Appointment]:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    if patient_phone:
-        cursor.execute("SELECT * FROM appointments WHERE patient_phone = ? ORDER BY created_at DESC", (patient_phone,))
+    db_type, conn = get_connection()
+    if db_type == "postgres":
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        if patient_phone:
+            cursor.execute("SELECT * FROM appointments WHERE patient_phone = %s ORDER BY created_at DESC", (patient_phone,))
+        else:
+            cursor.execute("SELECT * FROM appointments ORDER BY created_at DESC")
     else:
-        cursor.execute("SELECT * FROM appointments ORDER BY created_at DESC")
+        cursor = conn.cursor()
+        if patient_phone:
+            cursor.execute("SELECT * FROM appointments WHERE patient_phone = ? ORDER BY created_at DESC", (patient_phone,))
+        else:
+            cursor.execute("SELECT * FROM appointments ORDER BY created_at DESC")
+            
     rows = cursor.fetchall()
+    cursor.close()
     conn.close()
     
     results = []
@@ -166,21 +203,34 @@ def get_all_appointments(patient_phone: Optional[str] = None) -> List[Appointmen
     return results
 
 def cancel_appointment(appointment_id: str) -> bool:
-    conn = get_db_connection()
+    db_type, conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE appointments SET status = 'Cancelled' WHERE id = ? OR booking_ref = ?", (appointment_id, appointment_id))
+    if db_type == "postgres":
+        cursor.execute("UPDATE appointments SET status = 'Cancelled' WHERE id = %s OR booking_ref = %s", (appointment_id, appointment_id))
+    else:
+        cursor.execute("UPDATE appointments SET status = 'Cancelled' WHERE id = ? OR booking_ref = ?", (appointment_id, appointment_id))
     rows_affected = cursor.rowcount
     conn.commit()
+    cursor.close()
     conn.close()
     return rows_affected > 0
 
 def get_booked_slots(doctor_id: str, date: str) -> List[str]:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT appointment_time FROM appointments WHERE doctor_id = ? AND appointment_date = ? AND status != 'Cancelled'",
-        (doctor_id, date)
-    )
+    db_type, conn = get_connection()
+    if db_type == "postgres":
+        from psycopg2.extras import RealDictCursor
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute(
+            "SELECT appointment_time FROM appointments WHERE doctor_id = %s AND appointment_date = %s AND status != 'Cancelled'",
+            (doctor_id, date)
+        )
+    else:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT appointment_time FROM appointments WHERE doctor_id = ? AND appointment_date = ? AND status != 'Cancelled'",
+            (doctor_id, date)
+        )
     rows = cursor.fetchall()
+    cursor.close()
     conn.close()
     return [row["appointment_time"] for row in rows]
