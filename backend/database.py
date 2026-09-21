@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import random
 import string
@@ -5,11 +6,42 @@ import datetime
 from typing import List, Dict, Any, Optional
 from models import AppointmentCreate, Appointment
 
-DB_PATH = "trihealth_appointments.db"
+if os.environ.get("VERCEL"):
+    DB_PATH = "/tmp/trihealth_appointments.db"
+else:
+    DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trihealth_appointments.db")
 
 def get_db_connection():
+    first_time = not os.path.exists(DB_PATH)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    if first_time:
+        cursor = conn.cursor()
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS appointments (
+            id TEXT PRIMARY KEY,
+            booking_ref TEXT UNIQUE NOT NULL,
+            doctor_id TEXT NOT NULL,
+            doctor_name TEXT NOT NULL,
+            doctor_system TEXT NOT NULL,
+            doctor_specialty TEXT NOT NULL,
+            clinic_name TEXT NOT NULL,
+            clinic_address TEXT NOT NULL,
+            patient_name TEXT NOT NULL,
+            patient_phone TEXT NOT NULL,
+            patient_email TEXT NOT NULL,
+            patient_age INTEGER,
+            appointment_date TEXT NOT NULL,
+            appointment_time TEXT NOT NULL,
+            consultation_mode TEXT NOT NULL,
+            symptoms TEXT,
+            consultation_fee INTEGER,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            qr_code_data TEXT NOT NULL
+        )
+        """)
+        conn.commit()
     return conn
 
 def init_db():

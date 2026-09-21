@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # TriHealth AI - Integrative Healthcare & Doctor Recommendation Platform
 
 > **Tri-Paradigm Clinical Intelligence**: Patients share their health problem, receive instant comparative medical perspectives across **Ayurveda**, **Homeopathy**, and **Allopathy**, select their preferred healing path, get matched with the top-rated doctors in their city, and book appointment slots with confirmed digital passes.
@@ -121,6 +120,4 @@ AI Healthcare/
 
 ## 🛡️ Medical Disclaimer
 TriHealth AI is an educational decision-support tool comparing treatment paradigms across Ayurveda, Homeopathy, and Allopathy. It does not provide definitive medical diagnoses and does not replace emergency medical treatment. In cases of severe emergency, contact local emergency services (112 / 108) immediately.
-=======
-# AI-HealthCare-and-Doctor-Recommendation
->>>>>>> e5c16460986dd25baa78632d0532f49181635419
+

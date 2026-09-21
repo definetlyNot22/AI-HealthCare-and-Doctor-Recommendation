@@ -35,6 +35,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+@app.get("/api")
+def root_check():
+    return {
+        "status": "online",
+        "service": "TriHealth AI Backend",
+        "endpoints": ["/api/health", "/api/cities", "/api/doctors", "/api/analyze", "/api/appointments"]
+    }
+
 @app.get("/api/health")
 def health_check():
     gemini_key_configured = bool(os.getenv("GEMINI_API_KEY"))

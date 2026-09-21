@@ -253,7 +253,9 @@ export const DoctorList: React.FC<DoctorListProps> = ({
                           <h3 className="font-black text-slate-900 dark:text-white text-base truncate group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">
                             {doc.name}
                           </h3>
-                          <BadgeCheck className="w-4 h-4 text-teal-500 shrink-0" title="Verified Specialist" />
+                          <span title="Verified Specialist">
+                            <BadgeCheck className="w-4 h-4 text-teal-500 shrink-0" />
+                          </span>
                         </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400 truncate font-semibold">
                           {doc.degrees}
